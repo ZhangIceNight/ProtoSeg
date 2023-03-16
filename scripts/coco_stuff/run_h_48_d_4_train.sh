@@ -16,7 +16,7 @@ SCRATCH_ROOT=$4
 ASSET_ROOT=${DATA_ROOT}
 
 DATA_DIR="${DATA_ROOT}/coco_stuff_10k"
-SAVE_DIR="${DATA_ROOT}/seg_result/coco_stuff/"
+SAVE_DIR="${SCRATCH_ROOT}/seg_result/coco_stuff/"
 BACKBONE="hrnet48"
 
 CONFIGS="configs/coco_stuff/H_48_D_4.json"
@@ -24,8 +24,9 @@ CONFIGS_TEST="configs/coco_stuff/H_48_D_4_TEST.json"
 
 MODEL_NAME="hrnet_w48"
 LOSS_TYPE="fs_ce_loss"
+CHECKPOINTS_ROOT="${SCRATCH_ROOT}/checkpoints/coco_stuff"
 CHECKPOINTS_NAME="${MODEL_NAME}_${BACKBONE}_"$2
-LOG_FILE="./log/coco_stuff/${CHECKPOINTS_NAME}.log"
+LOG_FILE="${SCRATCH_ROOT}/logs/coco_stuff/${CHECKPOINTS_NAME}.log"
 echo "Logging to $LOG_FILE"
 mkdir -p `dirname $LOG_FILE`
 PRETRAINED_MODEL="./pretrained_model/hrnetv2_w48_imagenet_pretrained.pth"
@@ -81,13 +82,13 @@ elif [ "$1"x == "val"x ]; then
                        --checkpoints_name ${CHECKPOINTS_NAME} \
                        --phase test \
                        --gpu 0 1 2 3 \
-                       --resume ./checkpoints/coco_stuff/${CHECKPOINTS_NAME}_latest.pth \
+                       --resume ${CHECKPOINTS_ROOT}/checkpoints/coco_stuff/${CHECKPOINTS_NAME}_latest.pth \
                        --test_dir ${DATA_DIR}/val/image \
                        --log_to_file n \
                        --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_val_ms
 
   cd lib/metrics
-  python -u ade20k_evaluator.py --configs ../../${CONFIGS_TEST} \
+  python -u cocostuff_evaluator.py --configs ../../${CONFIGS_TEST} \
                                    --pred_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_val_ms/label \
                                    --gt_dir ${DATA_DIR}/val/label  
 
