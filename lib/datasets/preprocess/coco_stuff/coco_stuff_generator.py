@@ -54,12 +54,12 @@ def input_args():
             yield ('train', name.strip())
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--ori_root_dir', type=Path)
-    parser.add_argument('--save_dir', type=Path)
-    parser.add_argument('--validate_dir', type=lambda x: x and Path(x))
-    args = parser.parse_args()
 
-    coco = COCOProcessor()
+parser = argparse.ArgumentParser()
+parser.add_argument('--ori_root_dir', type=Path)
+parser.add_argument('--save_dir', type=Path)
+parser.add_argument('--validate_dir', type=lambda x: x and Path(x))
+args = parser.parse_args()
+coco = COCOProcessor()
+if __name__ == '__main__':
     mpp.Pool(processes=None).map(process, input_args())
