@@ -2,13 +2,18 @@
 SCRIPTPATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 cd $SCRIPTPATH
 cd ../../
-. config.profile
+# . config.profile
 
 # check the enviroment info
-nvidia-smi
-${PYTHON} -m pip install yacs
+# nvidia-smi
+# ${PYTHON} -m pip install yacs
 
-export PYTHONPATH="$PWD":$PYTHONPATH
+# export PYTHONPATH="$PWD":$PYTHONPATH
+
+
+DATA_ROOT=$3
+SCRATCH_ROOT=$4
+ASSET_ROOT=${DATA_ROOT}
 
 DATA_DIR="${DATA_ROOT}/coco_stuff_10k"
 SAVE_DIR="${DATA_ROOT}/seg_result/coco_stuff/"
@@ -26,10 +31,11 @@ mkdir -p `dirname $LOG_FILE`
 PRETRAINED_MODEL="./pretrained_model/hrnetv2_w48_imagenet_pretrained.pth"
 MAX_ITERS=60000
 
-
+BATCH_SIZE=8
+BASE_LR=0.01
 
 if [ "$1"x == "train"x ]; then
-  ${PYTHON} -u main.py --configs ${CONFIGS} \
+  python -u main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --nbb_mult 10 \
                        --phase train \
@@ -48,7 +54,7 @@ if [ "$1"x == "train"x ]; then
                        
 
 elif [ "$1"x == "resume"x ]; then
-  ${PYTHON} -u main.py --configs ${CONFIGS} \
+  python -u main.py --configs ${CONFIGS} \
                        --drop_last y \
                        --nbb_mult 10 \
                        --phase train \
@@ -68,7 +74,7 @@ elif [ "$1"x == "resume"x ]; then
 
 
 elif [ "$1"x == "val"x ]; then
-  ${PYTHON} -u main.py --configs ${CONFIGS_TEST} \
+  python -u main.py --configs ${CONFIGS_TEST} \
                        --data_dir ${DATA_DIR} \
                        --backbone ${BACKBONE} \
                        --model_name ${MODEL_NAME} \
@@ -81,7 +87,7 @@ elif [ "$1"x == "val"x ]; then
                        --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_val_ms
 
   cd lib/metrics
-  ${PYTHON} -u ade20k_evaluator.py --configs ../../${CONFIGS_TEST} \
+  python -u ade20k_evaluator.py --configs ../../${CONFIGS_TEST} \
                                    --pred_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_val_ms/label \
                                    --gt_dir ${DATA_DIR}/val/label  
 
@@ -89,14 +95,14 @@ elif [ "$1"x == "val"x ]; then
 elif [ "$1"x == "test"x ]; then
   if [ "$3"x == "ss"x ]; then
     echo "[single scale] test"
-    ${PYTHON} -u main.py --configs ${CONFIGS} --drop_last y \
+    python -u main.py --configs ${CONFIGS} --drop_last y \
                          --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
                          --phase test --gpu 0 1 2 3 --resume ./checkpoints/coco_stuff/${CHECKPOINTS_NAME}_latest.pth \
                          --test_dir ${DATA_DIR}/test --log_to_file n \
                          --out_dir ${SAVE_DIR}${CHECKPOINTS_NAME}_test_ss
   else
     echo "[multiple scale + flip] test"
-    ${PYTHON} -u main.py --configs ${CONFIGS_TEST} --drop_last y \
+    python -u main.py --configs ${CONFIGS_TEST} --drop_last y \
                          --backbone ${BACKBONE} --model_name ${MODEL_NAME} --checkpoints_name ${CHECKPOINTS_NAME} \
                          --phase test --gpu 0 1 2 3 --resume ./checkpoints/coco_stuff/${CHECKPOINTS_NAME}_latest.pth \
                          --test_dir ${DATA_DIR}/test --log_to_file n \
