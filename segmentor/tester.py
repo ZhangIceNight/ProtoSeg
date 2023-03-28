@@ -195,7 +195,7 @@ class Tester(object):
                         label_img_ = self.__relabel(label_img)
                     else:
                         label_img_ = label_img
-                    label_img_ = Image.fromarray(label_img_, 'P')
+                    label_img_ = Image.fromarray(label_img_)
                     Log.info('{:4d}/{:4d} label map generated'.format(image_id, self.test_size))
                     if 'subfolder' not in data_dict or len(subfolder[k]) == 0:
                         label_path = os.path.join(self.save_dir, "label/", '{}.png'.format(names[k]))

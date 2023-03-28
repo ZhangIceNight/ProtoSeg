@@ -73,7 +73,7 @@ class PixelPrototypeCELoss(nn.Module, ABC):
         self.ppd_criterion = PPD(configer=configer)
 
     def forward(self, preds, target):
-        h, w = target.size(1), target.size(2)
+        h, w = target.size(1), target.size(2) # targets: 4, 512, 1024
 
         if isinstance(preds, dict):
             assert "seg" in preds

@@ -84,10 +84,18 @@ class HRNet_W48_Proto(nn.Module):
         trunc_normal_(self.prototypes, std=0.02)
 
     def prototype_learning(self, _c, out_seg, gt_seg, masks):
-        pred_seg = torch.max(out_seg, 1)[1]
-        mask = (gt_seg == pred_seg.view(-1))
+        """
+        _c: 131_072, 720
+        out_seg: 4, 19, 128, 256
+        gt_seg: 131_072
+        masks: 131_072, 10, 19
+        self.prototypes: 19, 10, 720
+        """
+        pred_seg = torch.max(out_seg, 1)[1] # 4, 128, 256
+        mask = (gt_seg == pred_seg.view(-1)) # 131_072
+        
 
-        cosine_similarity = torch.mm(_c, self.prototypes.view(-1, self.prototypes.shape[-1]).t())
+        cosine_similarity = torch.mm(_c, self.prototypes.view(-1, self.prototypes.shape[-1]).t()) # 131072, 190
 
         proto_logits = cosine_similarity
         proto_target = gt_seg.clone().float()
@@ -95,29 +103,41 @@ class HRNet_W48_Proto(nn.Module):
         # clustering for each class
         protos = self.prototypes.data.clone()
         for k in range(self.num_classes):
-            init_q = masks[..., k]
-            init_q = init_q[gt_seg == k, ...]
+            init_q = masks[..., k] # 131072, 10       
+            init_q = init_q[gt_seg == k, ...] # 96129, 10
+
             if init_q.shape[0] == 0:
                 continue
+            
+            q, indexs = distributed_sinkhorn(init_q) # q: 96129, 10; indexs: 96129
 
-            q, indexs = distributed_sinkhorn(init_q)
+            m_k = mask[gt_seg == k] # 96129 bool
+            
+            c_k = _c[gt_seg == k, ...] # 96129, 720
 
-            m_k = mask[gt_seg == k]
+            m_k_tile = repeat(m_k, 'n -> n tile', tile=self.num_prototype) # 96129, 10 bool type
+            
+            m_q = q * m_k_tile  # 96129, 10    # n x self.num_prototype  bool type
 
-            c_k = _c[gt_seg == k, ...]
+            c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1]) # 96129, 720 bool type
 
-            m_k_tile = repeat(m_k, 'n -> n tile', tile=self.num_prototype)
+            c_q = c_k * c_k_tile # 96129, 720   # n x embedding_dim
 
-            m_q = q * m_k_tile  # n x self.num_prototype
+            f = m_q.transpose(0, 1) @ c_q # 10, 720  # self.num_prototype x embedding_dim
 
-            c_k_tile = repeat(m_k, 'n -> n tile', tile=c_k.shape[-1])
+            n = torch.sum(m_q, dim=0) # 10
 
-            c_q = c_k * c_k_tile  # n x embedding_dim
+            # print("m_k:", m_k.shape)
+            # print("c_k:", c_k.shape)
+            # print("m_k_tile:", m_k_tile.shape)
+            # print("m_q:", m_q.shape)
+            # print("c_k_tile:", c_k_tile.shape)
+            # print("c_q:", c_q.shape)
+            # print("f:", f.shape)
+            # print("n:", n.shape)
 
-            f = m_q.transpose(0, 1) @ c_q  # self.num_prototype x embedding_dim
-
-            n = torch.sum(m_q, dim=0)
-
+            print('*'*40)
+            exit(0) 
             if torch.sum(n) > 0 and self.update_prototype is True:
                 f = F.normalize(f, p=2, dim=-1)
 
@@ -135,38 +155,42 @@ class HRNet_W48_Proto(nn.Module):
             dist.all_reduce(protos.div_(dist.get_world_size()))
             self.prototypes = nn.Parameter(protos, requires_grad=False)
 
-        return proto_logits, proto_target
+        return proto_logits, proto_target # proto_logits: 131_071, 190; proto_target: 131_071
 
     def forward(self, x_, gt_semantic_seg=None, pretrain_prototype=False):
         x = self.backbone(x_)
-        _, _, h, w = x[0].size()
+        _, _, h, w = x[0].size() # 4, 48, 128, 256
 
         feat1 = x[0]
-        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True)
-        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True)
-        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True)
+        feat2 = F.interpolate(x[1], size=(h, w), mode="bilinear", align_corners=True) # 4, 96, 128, 256
+        feat3 = F.interpolate(x[2], size=(h, w), mode="bilinear", align_corners=True) # 4, 192, 128, 256
+        feat4 = F.interpolate(x[3], size=(h, w), mode="bilinear", align_corners=True) # 4, 384, 128, 256
 
-        feats = torch.cat([feat1, feat2, feat3, feat4], 1)
-        c = self.cls_head(feats)
+        
+        feats = torch.cat([feat1, feat2, feat3, feat4], 1) # 4, 720, 128, 256
 
-        c = self.proj_head(c)
-        _c = rearrange(c, 'b c h w -> (b h w) c')
+        c = self.cls_head(feats) # 4, 720, 128, 256
+        c = self.proj_head(c) # 4, 720, 128, 256
+        
+        _c = rearrange(c, 'b c h w -> (b h w) c') 
         _c = self.feat_norm(_c)
-        _c = l2_normalize(_c)
+        _c = l2_normalize(_c) # 4*128*256=131_072, 720
 
-        self.prototypes.data.copy_(l2_normalize(self.prototypes))
+
+        self.prototypes.data.copy_(l2_normalize(self.prototypes)) # 19, 10, 720 => 即 19 个类，每个类 10 个 Prototypes, 每个 prototype 720 dim
 
         # n: h*w, k: num_class, m: num_prototype
-        masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes)
+        masks = torch.einsum('nd,kmd->nmk', _c, self.prototypes) # 131_072, 10, 19
 
-        out_seg = torch.amax(masks, dim=1)
-        out_seg = self.mask_norm(out_seg)
-        out_seg = rearrange(out_seg, "(b h w) k -> b k h w", b=feats.shape[0], h=feats.shape[2])
+        out_seg = torch.amax(masks, dim=1) # 131_072, 19 => 挑出10个Prototypes 中最大概率的
 
+        out_seg = self.mask_norm(out_seg) # 131_072, 19
+        out_seg = rearrange(out_seg, "(b h w) k -> b k h w", b=feats.shape[0], h=feats.shape[2]) # 4, 19, 128, 256
         if pretrain_prototype is False and self.use_prototype is True and gt_semantic_seg is not None:
-            gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[2:], mode='nearest').view(-1)
+            # gt_semantic_seg: 4, 1, 512, 1024
+            gt_seg = F.interpolate(gt_semantic_seg.float(), size=feats.size()[2:], mode='nearest').view(-1) # 4, 1, 128, 256-> 131_072
             contrast_logits, contrast_target = self.prototype_learning(_c, out_seg, gt_seg, masks)
-            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}
+            return {'seg': out_seg, 'logits': contrast_logits, 'target': contrast_target}  # seg: 4,19,128,256; logits: 131_072,190; target: 131_072
 
         return out_seg
 

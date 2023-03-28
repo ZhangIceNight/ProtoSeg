@@ -175,7 +175,7 @@ class Trainer(object):
                     self.scheduler, self.optimizer, backbone_list=[0, ]
                 )
 
-            (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict)
+            (inputs, targets), batch_size = self.data_helper.prepare_data(data_dict) # targets: 4, 512, 1024
             self.data_time.update(time.time() - start_time)
 
             foward_start_time = time.time()
@@ -187,6 +187,11 @@ class Trainer(object):
                     outputs = self.seg_net(*inputs, gt_semantic_seg=targets[:, None, ...],
                                            pretrain_prototype=pretrain_prototype)
             self.foward_time.update(time.time() - foward_start_time)
+            # for (k,v) in outputs.items():
+            #     print("out:", k, v.shape)
+            # print("out:", outputs.keys())
+            # print('-'*30)
+            # exit(0)
 
             loss_start_time = time.time()
             if is_distributed():

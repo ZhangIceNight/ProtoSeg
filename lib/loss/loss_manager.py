@@ -61,7 +61,7 @@ class LossManager(object):
         return loss
 
     def get_seg_loss(self, loss_type=None):
-        key = self.configer.get('loss', 'loss_type') if loss_type is None else loss_type
+        key = self.configer.get('loss', 'loss_type') if loss_type is None else loss_type # fs_auxce_loss
         if key not in SEG_LOSS_DICT:
             Log.error('Loss: {} not valid!'.format(key))
             exit(1)
